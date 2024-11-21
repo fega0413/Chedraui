@@ -42,6 +42,19 @@ def parse_date(date_string):
             continue
     raise ValueError(f"Formato de fecha inválido: {date_string}")
 
+def validate_order_data(order):
+    """
+    Valida los datos de una orden antes de procesarla.
+    Verifica que las fechas no sean nulas y que la fecha de inicio sea anterior a la fecha de fin.
+    """
+    order_number, start_date, end_date = order
+
+    if not start_date or not end_date:
+        raise ValueError(f"Fechas nulas para la orden {order_number}")
+
+    if start_date > end_date:
+        raise ValueError(f"La fecha de inicio ({start_date}) es posterior a la fecha de fin ({end_date}) en la orden {order_number}")
+
 def update_orders_in_db(orders):
     """
     Actualiza las órdenes de compra en la base de datos SQL Server
@@ -50,14 +63,17 @@ def update_orders_in_db(orders):
     conn = connect_to_db()
     cursor = conn.cursor()
 
-    print("Actualizando órdenes en la base de datos...")
+    print("Validando y actualizando órdenes en la base de datos...")
     updated_orders = []
-    failed_orders = []  # Para registrar órdenes que fallaron
+    invalid_orders = []  # Para registrar órdenes con datos inválidos
 
     for order in orders:
         order_number, start_date, end_date = order
-        
+
         try:
+            # Validar los datos de la orden
+            validate_order_data(order)
+
             # Intentar analizar y formatear las fechas
             start_date_parsed = parse_date(start_date)
             end_date_parsed = parse_date(end_date) + " 23:59:59"  # Ajustar la hora de fin
@@ -84,8 +100,9 @@ def update_orders_in_db(orders):
             cursor.execute(sql_update_lpn)
 
         except ValueError as e:
+            # Registrar órdenes inválidas
             print(f"Error al procesar la orden {order_number}: {e}")
-            failed_orders.append(order_number)
+            invalid_orders.append(order_number)
 
     # Confirmar los cambios si hubo actualizaciones
     if updated_orders:
@@ -93,18 +110,18 @@ def update_orders_in_db(orders):
         print(f"Resumen de actualizaciones:")
         print(f" - Total de órdenes procesadas: {len(orders)}")
         print(f" - Total de órdenes actualizadas: {len(updated_orders)}")
-        print(f" - Órdenes fallidas: {len(failed_orders)}")
-        print("Órdenes actualizadas exitosamente:")
+        print(f" - Órdenes actualizadas exitosamente:")
         for order in updated_orders:
-            print(f" - OC_ID: {order}")
+            print(f"   - OC_ID: {order}")
     else:
         conn.rollback()
         print("No se actualizaron órdenes.")
 
-    if failed_orders:
-        print("Órdenes con errores en el formato de fechas:")
-        for order in failed_orders:
-            print(f" - OC_ID: {order}")
+    # Mostrar órdenes con datos inválidos
+    if invalid_orders:
+        print("Órdenes con datos inválidos:")
+        for order in invalid_orders:
+            print(f"   - OC_ID: {order}")
 
     cursor.close()
     conn.close()
